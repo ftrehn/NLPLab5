@@ -1,38 +1,50 @@
 import telebot
 import requests
-import jsons
-from Class_ModelResponse import ModelResponse
 
-# Замените 'YOUR_BOT_TOKEN' на ваш токен от BotFather
 API_TOKEN = '8239287995:AAEmSCWpXwyC2XhLuI4dnyAq74rU_JbXdOE'
+
 bot = telebot.TeleBot(API_TOKEN)
 user_contexts = {}
 
-# Команды
+SYSTEM_PROMPT = {
+    "role": "system",
+    "content": "Ты самый умный ассистент в мире. Отвечай на русском языке."
+}
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    user_id = message.chat.id
+    user_contexts[user_id] = [SYSTEM_PROMPT]
+
     welcome_text = (
-        "Привет! Я ваш Telegram бот.\n"
+        "Привет! Я ваш Telegram бот с поддержкой контекста.\n"
         "Доступные команды:\n"
-        "/start - вывод всех доступных команд\n"
-        "/model - выводит название используемой языковой модели\n"
-        "/clear - очистить контекст модели\n"
-        "Отправьте любое сообщение, и я отвечу с помощью LLM модели."
+        "/start - Перезапуск\n"
+        "/model - Узнать название модели\n"
+        "/clear - Очистить историю диалога (забыть контекст)"
     )
     bot.reply_to(message, welcome_text)
 
 
 @bot.message_handler(commands=['model'])
 def send_model_name(message):
-    # Отправляем запрос к LM Studio для получения информации о модели
-    response = requests.get('http://localhost:1234/v1/models')
+    try:
+        response = requests.get('http://localhost:1234/v1/models')
+        if response.status_code == 200:
+            model_info = response.json()
+            model_name = model_info['data'][0]['id']
+            bot.reply_to(message, f" Используемая модель: {model_name}")
+        else:
+            bot.reply_to(message, 'Не удалось получить информацию о модели.')
+    except Exception as e:
+        bot.reply_to(message, f'Ошибка соединения с LM Studio: {e}')
 
-    if response.status_code == 200:
-        model_info = response.json()
-        model_name = model_info['data'][0]['id']
-        bot.reply_to(message, f"Используемая модель: {model_name}")
-    else:
-        bot.reply_to(message, 'Не удалось получить информацию о модели.')
+
+@bot.message_handler(commands=['clear'])
+def clear_context(message):
+    user_id = message.chat.id
+    user_contexts[user_id] = [SYSTEM_PROMPT]
+    bot.reply_to(message, " История диалога очищена.")
 
 
 @bot.message_handler(func=lambda message: True)
@@ -41,9 +53,7 @@ def handle_message(message):
     user_query = message.text
 
     if user_id not in user_contexts:
-        user_contexts[user_id] = [
-            {"role": "system", "content": "Ты самый умный в мире ассистент."}
-        ]
+        user_contexts[user_id] = [SYSTEM_PROMPT]
 
     user_contexts[user_id].append({
         "role": "user",
@@ -53,7 +63,7 @@ def handle_message(message):
     request = {
         "messages": user_contexts[user_id],
         "temperature": 0.7,
-        "max_tokens": -1,
+        "max_tokens": 500,
         "stream": False
     }
 
@@ -64,8 +74,8 @@ def handle_message(message):
         )
 
         if response.status_code == 200:
-            model_response = jsons.loads(response.text, ModelResponse)
-            assistant_message = model_response.choices[0].message.content
+            response_data = response.json()
+            assistant_message = response_data['choices'][0]['message']['content']
 
             bot.reply_to(message, assistant_message)
 
@@ -74,16 +84,11 @@ def handle_message(message):
                 "content": assistant_message
             })
         else:
-            bot.reply_to(message, 'Ошибка API LM Studio')
+            bot.reply_to(message, f'Ошибка API LM Studio: {response.status_code}')
+
     except Exception as e:
         bot.reply_to(message, f'Произошла ошибка: {e}')
 
-
-@bot.message_handler(commands=['clear'])
-def clear_context(message):
-    user_id = message.chat.id
-    user_contexts[user_id] = [] # Очистка списка
-    bot.reply_to(message, "История диалога очищена.")
 
 # Запуск бота
 if __name__ == '__main__':
