@@ -20,8 +20,8 @@
 
 1.  **Клонируйте репозиторий:**
     ```bash
-    git clone [https://github.com/ftrehn/NLPLab5]
-    cd <папка_проекта>
+    git clone https://github.com/ftrehn/NLPLab5
+    cd NLPLab5
     ```
 
 2.  **Установите зависимости:**
